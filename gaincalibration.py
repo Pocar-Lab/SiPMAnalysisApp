@@ -49,25 +49,6 @@ def rms(array):
     avg = np.sqrt(avg)
     return avg
 
-def find_start(x, y, peak):
-    i = peak
-    while True:
-        if y[i] < min(y[:peak]):
-            break
-        elif i == len(y) - 1:
-            break
-        else:
-            i += 1
-            continue
-    width = abs(peak - i)
-    
-    start = peak - width
-    
-    if start < 10:
-        return None
-    return start
-
-
 def get_wf(wf, path):
     wpath = path + '/' + str(wf)
     wnum = wf.split('.')[0][1:]
@@ -118,8 +99,6 @@ def process_waveforms(rundir):
     err = rms(yl - yl.mean())
     return (avg,err,wfcount)
 
-
-
 folder = 'D:\Xe\ShAmpCalibrationsNov2019'
 dates = os.listdir(folder)
 
@@ -148,38 +127,3 @@ for date in dates:
         series = pd.Series(data)
         DF = DF.append(series,ignore_index=True)
         print 'Run Finished'
-        
-#solution for the weird ass formatting issue
- DF = DF.replace({'14000000000000002':'14mV',
-                  '21999999999999996':'22mV',
-                  '7000000000000001':'7cV',
-                  '41499999999999992':'415mV'})
-    
-#a solution for the horrible format of '.1V' = '1dV'
-def quickreplace(string):
-    mag = string[-2]
-    if mag == '0':
-        return float(string[:-1])
-    num = float(string[:-2])
-    if mag == 'd':
-        num = num*0.1
-    if mag == 'c':
-        num = num*0.01
-    if mag == 'm':
-        num = num*0.001
-    return num
-
-DF.input = DF.input.apply(quickreplace)
-##
-
-gains= ['00']#,'01','10','11']
-
-for gain in gains:
-    df = DF[DF.gain == gain]
-    df = df.sort_values(by=['input'])
-    x = df.input
-    y = df.peak_avg
-    yerr = df.peak_std
-    plt.scatter(x,y)
-    plt.errorbar(x,y,yerr,ls='none')
-    
