@@ -1,35 +1,35 @@
                                                                                      
-
-
 # =============================================================================
 # Currently working on updating this code to work in Python 3.
 # Primarily this consists of changing print commands, and updating syntax
 # with Tk modules. Hopefully there is minimal syntax change and just a change 
 # in the way that the modules are loaded.
 # =============================================================================
-
-
-from scipy import signal  # needs to be here otherwise sp.signal won't be recognized
-from tkinter import messagebox, filedialog, ttk
+#GUI imports
+import tkinter as tk
+from tkinter import messagebox, ttk
 from tkinter.filedialog import askdirectory, askopenfilename
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import queue
 import threading
+#Plotting
+import matplotlib
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib import pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib import style
+#Analysis
 import datetime
-from numpy.polynomial.polynomial import Polynomial
 import fnmatch
 import pandas as pd
 import scipy as sp
 import numpy as np
+from numpy.polynomial.polynomial import Polynomial
+#I/O commands and file management
 import zipfile
 from uuid import uuid4
 import re
 import os
-import tkinter as tk
-from matplotlib import pyplot as plt
-from matplotlib.figure import Figure
-from matplotlib import style
-import matplotlib
+
 matplotlib.use("TkAgg", warn=False)
 style.use("ggplot")
 #import shutil
@@ -56,8 +56,6 @@ def df_window(df):
         df.to_html(f)
     webbrowser.open(f.name)
 
-
-
 # =============================================================================
 # Analysis Constants
 # =============================================================================
@@ -66,7 +64,6 @@ peak_separation = 5
 same_peak = .005
 dt_to_ind = 250  # conversion from microseconds to indices, divide by 1000 to ns, then 4ns per index
 binnum = 150
-
 # =============================================================================
 # Threading Functions
 # =============================================================================
@@ -76,12 +73,23 @@ IOLock = threading.Lock()
 tasks = queue.Queue()
 outputs = queue.Queue()
 
-# this function is called by the thread on any tasks left in the Queue
 
 
 def process_data(task):
+    '''
+    Thread-safe function to acquire requested data and run the analysis.
+    task = dfname, peakid, rundir, TCPath, make_new
+    
+    dfname is a parent group in the hdf file where the processed data should
+    be put
+    peakid is a unique uuid for the particular datapoint
+    rundir is the full directory source of the raw data
+    TCPath is the location of the temperature file for the run
+    make_new is a boolean indicating if a new hdf is to be made for the data
+    '''
+    
     dfname, peakid, rundir, TCPath, make_new = task
-
+    
     print('Processing Waveforms for {}'.format(rundir))
     peaksDF = process_waveforms(dfname, rundir)
     print('Processing TC Data')
@@ -113,11 +121,11 @@ def process_data(task):
 
 
 
-# The code the other thread runs, constantly asks for items from queue
-# and runs process_data on any tasks that are there
-
-
 def threader():
+    '''
+    Passive function running in thread to pass tasks and call the
+    data processing function on them.
+    '''
     while True:
         if killthread:
             break
@@ -134,6 +142,10 @@ mythread.start()
 # GUI Functions
 # =============================================================================
 def treeview_sort_column(tv, col, reverse):
+    '''
+    A function to be called on a TreeView column to 
+    sort the rows by the column value.
+    '''
     l = [(tv.set(k, col), k) for k in tv.get_children('')]
     l.sort(reverse=reverse)
 
@@ -145,11 +157,12 @@ def treeview_sort_column(tv, col, reverse):
     tv.heading(col, command=lambda:
                treeview_sort_column(tv, col, not reverse))
 
-
 # WF Import and TC Line Processing
 
-
 def get_dt(path):
+    '''
+    A function to get the datetime from the first waveform in a runfile.
+    '''
     path = str(path)
     pathlist = path.split('/')
     date = pathlist[3]
@@ -174,11 +187,19 @@ def get_dt(path):
 
 
 def line_to_dt(line):
+    '''
+    Turns a m/d/y string into a datetime object.
+    '''
     dt = strptime(' '.join(line.split()[:2]), '%m/%d/%Y %H:%M:%S.%f')
     return dt
 
 
 def find_start(x, y, peak):
+    '''
+    Follows a peak down the right side until the right side reaches
+    less than the minima of the left, then returns that distance less
+    than the peak index.
+    '''
     i = peak
     while True:
         if y[i] < min(y[:peak]):
@@ -198,6 +219,10 @@ def find_start(x, y, peak):
 
 
 def get_wf(wf, path):
+    '''
+    Returns x,y,time for a wf in the given path. Returns None triplet
+    if there are no wfs or some other error occurs.
+    '''
     wpath = path + '/' + str(wf)
     wnum = wf.split('.')[0][1:]
     try:
@@ -234,8 +259,10 @@ def get_wf(wf, path):
 def gauss(x, a, x0, sigma):
     return a*np.exp(-(x-x0)**2/(2*sigma**2))
 
-
 def rms(array):
+    '''
+    Obtains the deviation from the mean.
+    '''
     avg = 0
     for val in array:
         avg += val**2
@@ -244,13 +271,15 @@ def rms(array):
     return avg
 
 def blinfit(x,y,err):
+    '''
+    Mathematically exact best linear fit for data with errors.
+    '''
     x = sp.array(x)
     x = x.astype(float)
     y = sp.array(y)
     y = y.astype(float)
     err = sp.array(err)
     w = err**(-2)
-    
     
     wx = w*x
     wx2 = w*(x**2)
@@ -267,6 +296,10 @@ def blinfit(x,y,err):
     return (c,m,ac,am)
 
 def get_peaks(x, y):
+    '''
+    Analyze waveform and find peaks with filtering then return info
+    about peaks.
+    '''
     threshold = np.mean(y)
     # (None,None) puts value in props but doesn't add a filter cond.
     peak_inds, props = sp.signal.find_peaks(y, prominence=np.mean(y), height=threshold,
@@ -328,6 +361,9 @@ def get_peaks(x, y):
 
 
 def process_waveforms(dfname, rundir):
+    '''
+    Function to analyze all wfs in a given directory. Returns a DataFrame.
+    '''
     num = len(fnmatch.filter(os.listdir(rundir), 'w*'))
     wfs = fnmatch.filter(os.listdir(rundir), 'w*')
     
@@ -368,6 +404,9 @@ def process_waveforms(dfname, rundir):
 
 
 def process_TC(TCPath, rundir):
+    '''
+    Function to return DataFrame of Temperature info for a run.
+    '''
 
     times = []
     temps = []
@@ -403,6 +442,10 @@ def process_TC(TCPath, rundir):
 
 
 def alpha_df(rundir, peaksDF, tempsDF, peakid, makenew=False):
+    '''
+    Collects info from peak DF and temperature DF to create new
+    single row DF which can be appended to a DF in the alphas.h5 hdf.
+    '''
 #     get label data
     rundir = str(rundir)
     pathlist = rundir.split('/')
@@ -456,7 +499,11 @@ def alpha_df(rundir, peaksDF, tempsDF, peakid, makenew=False):
 # =============================================================================
 
 class LXeDataManager(tk.Tk):
-
+    '''
+    The primary applet. Initializes the start page and creates the
+    other pages, sets up the page2page functionality.
+    '''
+    
     def __init__(self, *args, **kwargs):
 
         tk.Tk.__init__(self, *args, **kwargs)
@@ -482,14 +529,17 @@ class LXeDataManager(tk.Tk):
 
 
 class StartPage(tk.Frame):
+    '''
+    Start Page of the applet
+    '''
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
         label = tk.Label(self, text="Start Page", font=LARGE_FONT)
         label.pack(pady=10, padx=10)
 
-        button1 = ttk.Button(self, text="Visit Waveform Viewer",
-                             command=lambda: controller.show_frame(WaveformViewer))
-        button1.pack()
+        #button1 = ttk.Button(self, text="Visit Waveform Viewer",
+        #                    command=lambda: controller.show_frame(WaveformViewer))
+        #button1.pack()
 
         button2 = ttk.Button(self, text="Visit Alpha Data Viewer",
                              command=lambda: controller.show_frame(AlphaViewer))
@@ -615,14 +665,16 @@ class WaveformViewer(tk.Frame):
 '''
 
 class RunFitting(tk.Frame):
-    
+    '''
+    Applet page used for plotting runs from the alphas.h5 DF and fitting them.
+    '''
     def __init__(self, parent, controller):
         
         tk.Frame.__init__(self,parent,bg = 'LightSteelBlue4')
         
+        #collect the relevant info in a local df variable
         with pd.HDFStore(alphapath,'r') as hdf:
             i = 0
-            print(hdf.keys())
             for key in hdf.keys():
                 if i == 0:
                     df = hdf[key]
@@ -634,6 +686,8 @@ class RunFitting(tk.Frame):
         biases = list(set(df.biasV))
         store = pd.HDFStore(peakspath,'r')
         i = 0
+        
+        #Adds a counts column to the DF
         for s in separations:
             keys = df[df.separation == s].index
             s = s[:2]
@@ -709,6 +763,10 @@ class RunFitting(tk.Frame):
         
         
     def refresh_dates(self):
+        '''
+        Refreshes the dates menu for selection. Only presents dates
+        that meets the other given requirements.
+        '''
         sep = self.sepmenu.get()
         bv = self.biasmenu.get()
         tef = self.tef.get()
@@ -728,6 +786,10 @@ class RunFitting(tk.Frame):
         self.datelist['values'] = dates
     
     def plot_data(self):
+        '''
+        Uses the date given and other parameters to select and plot data
+        and a linaer fit.
+        '''
         bv = self.biasmenu.get()
         df = self.df
         
@@ -762,7 +824,10 @@ class RunFitting(tk.Frame):
 
     
 class AlphaViewer(tk.Frame):
-
+    '''
+    Applet page used for viewing the contents of a DataFrame and processing
+    new data to add to the DF.
+    '''
     def __init__(self, parent, controller):
 
         tk.Frame.__init__(self, parent, bg='LightSteelBlue4')
@@ -783,8 +848,6 @@ class AlphaViewer(tk.Frame):
         
         self.namelist = namelist = tk.Listbox(self, selectmode=tk.BROWSE)
         namelist.grid(row=1, column=1, rowspan = 4,sticky='NS')
-
-        
         
         listlabel = ttk.Label(self,text = 'Alpha Frame List',anchor = 'center')
         listlabel.grid(row=0, column=1, sticky = 'SEW')
@@ -851,6 +914,10 @@ class AlphaViewer(tk.Frame):
         self.refresh_list()    
         
     def check_queue(self):
+        '''
+        Automatically updates the GUI Queue display and refreshes the DF
+        whenever an item from the Queue is completed or new items are added
+        '''
 #       print( 'checking queue')
         try:
             dfname, peakid, rundir, TCPath, make_new = outputs.get(block=False)
@@ -872,7 +939,12 @@ class AlphaViewer(tk.Frame):
             self.master.after(2500,self.check_queue)
     
     def pop_table(self):
-        self.table.grid_remove()
+        '''
+        Populates the DataFrame display in the GUI according to selection
+        parameters.
+        '''
+        
+        self.table.grid_remove() #remove the table from the GUI
         self.table.delete(*self.table.get_children())
         self.update_dfname()
         dfname = self.dfname
@@ -889,6 +961,7 @@ class AlphaViewer(tk.Frame):
         columns = [str(header) for header in df.columns]
         table.config(columns=columns)
         
+        #default widths for the DF columns
         widths = [60,27,37,56,59,50,59,36,52,50,20]
         table.column('#0',width = 30,stretch = False)
         for i,col in enumerate(columns):
@@ -913,10 +986,14 @@ class AlphaViewer(tk.Frame):
                         table.set(peakid, col, value)
                     except (ValueError, TypeError):
                         table.set(peakid, col, df.loc[peakid][col])
+        #put the new updated table back in the GUI
         self.table.grid(row=0, column=2, rowspan=10, sticky='NSEW',padx = 10,pady = 10)
     
     def new_entry(self):
-#         user inputs
+        '''
+        Initialize selection windows to process new data and format it
+        to be passed along to the Queue.
+        '''
         self.update_dfname()
         dfname = self.dfname
         make_new = self.make_new.get()
@@ -926,6 +1003,7 @@ class AlphaViewer(tk.Frame):
             print('Do not use an empty DFName')
             return
         
+        #Collect a list of the run files if multiple are being used
         if multiple_dirs:
             path = askdirectory(initialdir=self.runlist,
                                 title='Select a folder containing multiple runs')
@@ -947,6 +1025,7 @@ class AlphaViewer(tk.Frame):
                         continue
             thisrun = runs[0]
         
+        #Otherwise use only the specific file selected.
         elif not multiple_dirs:
             rundir = askdirectory(initialdir=self.rundir,
                                   title='Choose a run to process')
@@ -956,16 +1035,13 @@ class AlphaViewer(tk.Frame):
             self.rundir = rundir #store last chosen directory
             thisrun = rundir
                 
-        
-        
+        #get list of paths that have been processed in this table
         with IOLock:
-            #get list of paths that have been processed in this table
             with pd.HDFStore(alphapath, 'r') as hdf:
                 try:
                     paths = list(hdf[dfname]['wfpath'])
                 except KeyError:
                     paths = []
-        
         
         #ignore disk name when checking
         queued = [task[2] for task in tasks.queue]
@@ -974,7 +1050,6 @@ class AlphaViewer(tk.Frame):
             if len(runs) == 0 or (len(runs) == 1 and runs[0] in self.get_items()):
                 print("All of these runs have been processed in this table.")
                 return
-        
         
         elif rundir[2:] in paths or rundir[2:] in queued:
             print("This run has already been processed in this table.")
@@ -988,6 +1063,7 @@ class AlphaViewer(tk.Frame):
             print("No TC file selected.")
             return
         
+        #Get a unique ID# for each new run
         with IOLock:
             with pd.HDFStore(peakspath, mode='a') as hdf:
                 if multiple_dirs:
@@ -1012,8 +1088,7 @@ class AlphaViewer(tk.Frame):
                         else:
                             break
         
-        
-        #put the tasks in the queue
+        #Give the tasks to the queue
         if multiple_dirs:
             for i in range(len(runs)):
                 task = (dfname, idlist[i], runs[i], TCPath, make_new)
@@ -1026,14 +1101,20 @@ class AlphaViewer(tk.Frame):
             tasks.put(task)
             self.refresh_queue(new = rundir)
     
-
     def update_dfname(self):
+        '''
+        Assign current entry to the DFName variable or collect the selected key.
+        '''
         if self.make_new.get():
             self.dfname = self.entry3.get()
         else:
             self.dfname = self.namelist.selection_get()
-
+            
+    
     def refresh_list(self):
+        '''
+        Refresh the list of DFNames that are shown.
+        '''
         self.namelist.delete(0, tk.END)
         with IOLock:
             with pd.HDFStore(alphapath, 'a') as hdf:
@@ -1043,6 +1124,9 @@ class AlphaViewer(tk.Frame):
         
         
     def del_frame(self):
+        '''
+        Deletes the currently selected DataFrame.
+        '''
         MsgBox = messagebox.askquestion ('Delete table','Are you sure you want to delete this *entire* frame?',icon = 'warning')
         if MsgBox == 'no':
             return
@@ -1053,6 +1137,10 @@ class AlphaViewer(tk.Frame):
         self.refresh_list()
 
     def display_hist(self):
+        '''
+        Plots a histogram corresponding to the datapoint selected in
+        the displayed DataFrame.
+        '''
         dfname = self.dfname
         peakid, = self.table.selection()
         key = dfname + '/' + peakid
@@ -1066,7 +1154,6 @@ class AlphaViewer(tk.Frame):
         with IOLock:
             with pd.HDFStore(peakspath, 'r') as hdf:
                 DF = hdf[key]
-        
         
         #x0 = float(mdpt)
         #b = float(sigma)
@@ -1133,12 +1220,18 @@ class AlphaViewer(tk.Frame):
         plt.show()
         
     def save_to_clipboard(self):
+        '''
+        Saves the current displayed DataFrame to the clipboard.
+        '''
         with IOLock:
             with pd.HDFStore(alphapath, 'r') as hdf:
                 DF = hdf[self.dfname]
             DF.to_clipboard()
-
+    
     def del_row(self):
+        '''
+        Deletes the selected row from the displayed DataFrame.
+        '''
         MsgBox = messagebox.askquestion ('Entry Deletion','Are you sure you want to delete this row?',icon = 'warning')
         if MsgBox == 'no':
             return
@@ -1152,7 +1245,10 @@ class AlphaViewer(tk.Frame):
     
     
     def refresh_queue(self,new = None,completed = None):
-        
+        '''
+        Constructs and paints the Queuelist displayed in the DF for keeping
+        track of what runs have been queued up and processed.
+        '''
         queuelist = self.queuelist
         queuelist.column('#0', width=150)
         queuelist.column('queue', width=35)
@@ -1205,6 +1301,9 @@ class AlphaViewer(tk.Frame):
             queuelist.item(completed,tag = 'completed')
         
     def get_items(self,item = ''):
+        '''
+        Return simplified list of all the items in the queuelist Treeview.
+        '''
         queuelist = self.queuelist
         thislist = []
         if len(queuelist.get_children(item)) == 0:
@@ -1217,19 +1316,9 @@ class AlphaViewer(tk.Frame):
                     thislist += self.get_items(child)
         return thislist
 
-
-
-
-
-
-
-
-
 app = LXeDataManager()
 s = ttk.Style()
 s.configure('Treeview')
-#s.theme_use('clam')
 app.mainloop()
 
 killthread = True
-#mythread.join() #make sure you don't do anything until the last thread finishes
