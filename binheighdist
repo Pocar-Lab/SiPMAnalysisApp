@@ -1,0 +1,20 @@
+import scipy as sp
+import numpy as np
+from matplotlib import pyplot as plt
+
+#define sample distribution parameters
+a = 0.5
+x0 = 10
+N = 1000
+
+x = []
+for i in range(500):
+    sample = np.random.normal(x0, a, N)
+    hist = plt.hist(sample, bins=100, density=False, color='b')
+    plt.close()
+    
+    x.append(hist[1][40])
+
+x = np.array(x)
+
+plt.hist(x, bins = 100, density=False, color='b')
