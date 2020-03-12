@@ -25,6 +25,8 @@ __Other Sources:__
 * It seems that minimization of $\chi^2$ is a particular case of a weighted least squares minimization: https://en.wikipedia.org/wiki/Weighted_least_squares
 
 - "The weights should, ideally, be equal to the reciprocal of the variance of the measurement."
+- This instace also agrees with that definition, and the definition from Measurements and their Uncertainties
+https://en.wikipedia.org/wiki/Reduced_chi-squared_statistic
 
 * Eventually it is the case that minimizing least squares is equivelant to the maximizing the Likelihood function: https://www.tandfonline.com/doi/pdf/10.1080/01621459.1976.10481508?needAccess=true
 
@@ -37,6 +39,8 @@ __Thought Process of the derivation:__
 3) The probability to obtain the *exact* arrangement of bins with the observed heights is the product of the probability to obtain each bins observed height over all the bins
 
 - __The function that is minimized when errors are provided is (res/sigma)^2 , which it seems is NOT the chi2 function__
+
+
 
 ### The Covariance matrix pcov returned by sp.curve_fit():
 
