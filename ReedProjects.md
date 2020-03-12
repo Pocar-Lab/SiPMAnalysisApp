@@ -36,6 +36,7 @@ __Thought Process of the derivation:__
 2) The probability to obtain the observed height O_i is *binom(O_i, p = E_i/N, N)*
 3) The probability to obtain the *exact* arrangement of bins with the observed heights is the product of the probability to obtain each bins observed height over all the bins
 
+- __The function that is minimized when errors are provided is (res/sigma)^2 , which it seems is NOT the chi2 function__
 
 ### The Covariance matrix pcov returned by sp.curve_fit():
 
