@@ -16,8 +16,6 @@
 
 - Continue to work on the write-up
 
-
-
 ### Why the denominator of the $\chi^2$ statistic is equal to $\alpha_i^2$ in Measurements and their Uncertainties textbook but is equal to $E_i^2$ in every other source?
 
 __Other Sources:__
@@ -53,6 +51,9 @@ elif not absolute_sigma:
             s_sq = cost / (ysize - p0.size)
             pcov = pcov * s_sq
 - Another line says cost is the sum of squares, and ysize - p0.size is simply N - #params, aka s_sq is the minimized chi squared, as prescribed.
+- This process only happens if the errors are not provided (aka assumed homogeneous). I am now following this article to determine the effect of Sigma. https://stackoverflow.com/questions/14581358/getting-standard-errors-on-fitted-parameters-using-the-optimize-leastsq-method-i
+
+"optimize.leastsq and optimize.curvefit provide us a way to estimate errors in fitted parameters, but we cannot just use these methods without questioning them a little bit. The bootstrap is a statistical method which uses brute force, and in my opinion, it has a tendency of working better in situations that may be harder to interpret."
+
 - Ultimately this is all just a wrapper around MINPACK algorithms which are written in FORTRAN, there is no way I am going to understand the code, even the approximation to the Hessian matrix is going to be too challenging.
 - If I am to trust curve_fit documentation, this is what it says: The estimated covariance of popt. The diagonals provide the variance of the parameter estimate. To compute one standard deviation errors on the parameters use perr = np.sqrt(np.diag(pcov)).
-
