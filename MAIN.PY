@@ -1,5 +1,3 @@
-
-
 #%%
 #GUI imports
 import tkinter as tk
@@ -16,6 +14,7 @@ from matplotlib import style
 import matplotlib.cm as cm
 #Analysis
 import datetime
+import pytz
 import pandas as pd
 import numpy as np
 from numpy.polynomial.polynomial import Polynomial
@@ -26,7 +25,7 @@ import os
 import analysis
 import copy
 #%%
-matplotlib.use("TkAgg", warn=False)
+#matplotlib.use("TkAgg", warn=False)
 style.use("ggplot")
 #import shutil
 polyfit = Polynomial.fit
@@ -323,7 +322,7 @@ class LXeDataManager(tk.Tk):
                                 command=self.widthprompt)
         
         self.frames = {}
-        for F in (StartPage,  AlphaViewer, RunFitting): #WaveformViewer,
+        for F in (StartPage,  AlphaViewer, RunFitting, SlowControlViewer):
             frame = F(container, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky='NSEW')
@@ -332,8 +331,6 @@ class LXeDataManager(tk.Tk):
     def toggle(self,attr):
         new = not getattr(self,attr)
         setattr(self,attr,new)
-        
-    
     
     def show_frame(self, cont):
         frame = self.frames[cont]
@@ -342,7 +339,7 @@ class LXeDataManager(tk.Tk):
     def app_exit(self):
         self.quit()
         self.destroy()
-        
+    
     def sigfigprompt(self):
         prompt = tk.Toplevel()
         prompt.title("Significant Figure Settings")
@@ -428,17 +425,21 @@ class StartPage(tk.Frame):
         #button1 = ttk.Button(self, text="Visit Waveform Viewer",
         #                    command=lambda: controller.show_frame(WaveformViewer))
         #button1.pack()
-
+        
         button2 = ttk.Button(self, text="Visit Alpha Data Viewer",
                              command=lambda: controller.show_frame(AlphaViewer))
         button2.pack()
-
         
-        button3 = ttk.Button(self,text = "Visit Run Fit Viewer",
+        button3 = ttk.Button(self, text = "Visit Run Fit Viewer",
                                  command = lambda: controller.show_frame(RunFitting))
         button3.pack()
+        
+        button4 = ttk.Button(self, text="Visit Slow Control Data Viewer",
+                             command = lambda: controller.show_frame(SlowControlViewer))
+        button4.pack()
 
-'''
+
+'''WaveformViewer
 class WaveformViewer(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent, bg='LightSteelBlue4')
@@ -616,11 +617,13 @@ class RunFitting(tk.Frame):
         self.ax = self.f.add_subplot(111)
         
         self.graphframe = tk.Frame(self)
-        self.graphframe.grid(row=0, column=2,rowspan = 10, sticky='NSEW',padx=10,pady=10)
+        self.graphframe.grid(row=0, column=2, rowspan = 10,
+                             sticky='NSEW',padx=10,pady=10)
         
         self.canvas = FigureCanvasTkAgg(self.f, master=self.graphframe)
         self.canvas.mpl_connect('pick_event', TempPlotOnClick)
         self.canvas.get_tk_widget().pack()
+        
         
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.graphframe)
         self.toolbar.update()
@@ -638,8 +641,7 @@ class RunFitting(tk.Frame):
         
         clearbutton = ttk.Button(self, text='Clear Plot',
                                  command = self.clearplot)#self.ax.clear)
-        clearbutton.grid(row=5,column=1,pady=1,sticky='EW')
-        
+        clearbutton.grid(row=5,column=1,pady=1,sticky='EW')        
         self.allbv = tk.IntVar()
         allbiases = ttk.Checkbutton(self, text='Plot All Biases',variable=self.allbv)
         allbiases.grid(row=6, column=0,pady = 1,sticky='EW')
@@ -749,6 +751,179 @@ class RunFitting(tk.Frame):
         self.ax.set_xlabel('Temperature (K)')
         self.ax.set_ylabel('Alpha Peak (V)')
         
+        
+        self.canvas.draw()
+
+class SlowControlViewer(tk.Frame):
+    '''
+    Applet page used for viewing the slow control data (temperature, flow
+    pressure, etc.) in long form time series.
+    '''
+    
+    _handletolabel = {
+                        'RTD0 - Coldfinger': 'RTD0',
+                        'RTD1 - Cell Bottom': 'RTD1',
+                        'RTD2': 'RTD2',
+                        'RTD3': 'RTD3',
+                        'RTD4 - SiPM/Cell Top': 'RTD4',
+                        'Flow Rate': 'Flow',
+                        'Total Xenon': 'Flow Integration',
+                        'PG1': 'Pressure 1',
+                        'PG2': 'Pressure 2',
+                        }
+    
+    _typetogroup = {'Temperature':'Temp_Agg', 'Flow':'FlPr_Agg',
+                    'Pressure':'FlPr_Agg'}
+    
+    def __init__(self, parent, controller):
+        
+        tk.Frame.__init__(self, parent, bg='LightSteelBlue4')
+        
+        self.f = Figure(figsize=(7, 7), dpi=100)
+        self.temp_ax = self.f.add_subplot(111)
+        
+        self.graphframe = tk.Frame(self)
+        self.graphframe.grid(row=0, column=2, rowspan=10, 
+                             sticky='NSEW', padx=10, pady=10)
+        
+        
+        self.canvas = FigureCanvasTkAgg(self.f, master=self.graphframe)
+        self.canvas.mpl_connect('pick_event', TempPlotOnClick)
+        self.canvas.get_tk_widget().pack()
+        
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self.graphframe)
+        self.toolbar.update()
+        
+        homebutton = ttk.Button(self, text='Back to Home',
+                                command=lambda: controller.show_frame(StartPage))
+        homebutton.grid(row=0, column=0, pady = 5, sticky='NSEW')
+        
+        
+        sensors = self.sensors = {
+            'Temperature': ('RTD0 - Coldfinger', 'RTD1 - Cell Bottom',
+                            'RTD2', 'RTD3', 'RTD4 - SiPM/Cell Top'),
+            'Flow': ('Flow Rate', 'Total Xenon'),
+            'Pressure': ('PG1', 'PG2')
+            }
+        
+        
+        
+        typeio = self.typeio = {}
+        
+        self.menubutton = ttk.Menubutton(self, text='Data Selection')
+        self.menubutton.grid(row=0, column=1, sticky='NSEW', pady=5)
+        self.topmenu = tk.Menu(self.menubutton, tearoff=False)
+        self.menubutton.configure(menu=self.topmenu)
+        for dtype in sensors:
+            menu = tk.Menu(self.topmenu, tearoff=False)
+            self.topmenu.add_cascade(label=dtype, menu=menu)
+            
+            for sensor in sensors[dtype]:
+                typeio[sensor] = tk.BooleanVar()
+                menu.add_checkbutton(label=sensor, variable=typeio[sensor])
+        
+        self.startdate = ttk.Entry(self, )
+        self.enddate = ttk.Entry(self)
+        self.startdate.grid(row=1, column=1, sticky='NSEW', pady=5)
+        self.enddate.grid(row=2, column=1, sticky='NSEW', pady=5)
+        self.startdate.insert(0, '2000-12-30 16:34:56.561683')
+        self.enddate.insert(0, '2000-12-31 1:12:21.843155')
+        
+        
+        startlabel = ttk.Label(self, text='Start Date')
+        endlabel = ttk.Label(self, text='End Date')
+        startlabel.grid(row=1, column=0, pady=5)
+        endlabel.grid(row=2, column=0, pady=5)
+        
+        self.rowconfigure(index=9, weight=1)
+        
+        self.plotbutton = ttk.Button(self, text='Plot Data', 
+                                     command=self.plot_data)
+        self.plotbutton.grid(row=3, column=0, columnspan=2, 
+                             pady=10, sticky='NS')
+    def plot_data(self):
+        
+        #clear the figure
+        self.f.clf()
+        
+        #Construct list of sensors that are checked to plot
+        sensors_to_plot = []
+        typeio = self.typeio
+        for sensor in typeio:
+            if typeio[sensor].get() == True:
+                sensors_to_plot.append(sensor)
+        
+        #Verify which sensor types to create subplots for
+        types_to_plot = []
+        sensors = self.sensors        
+        for sensor_type in sensors:
+            for sensor in sensors_to_plot:
+                if sensor in sensors[sensor_type]:
+                    types_to_plot.append(sensor_type)
+                    break
+        
+        #handle 2 label dictionaries
+        self.axes = dict() #{sensor_type1:ax1, ...}
+        self.legend = dict() #{ax1:{artist1:label1, ...}, ...}
+        
+        #build each subplot
+        for i,sensor_type in enumerate(types_to_plot):
+            if i==0:
+                first = ax = self.axes[sensor_type] = self.f.add_subplot(len(types_to_plot), 1, i+1)
+                pass
+            else:
+                ax = self.axes[sensor_type] = self.f.add_subplot(len(types_to_plot), 1, i+1, sharex=first)
+            ax.set_title(f'{sensor_type} Data')
+            ax.set_xlabel(f'Time')
+            ax.set_ylabel(sensor_type)
+        
+        #Retrieve date entries and convert to Unix time
+        startdate = self.startdate.get()
+        enddate = self.enddate.get()
+        start = datetime.datetime.strptime(startdate, '%Y-%m-%d %H:%M:%S.%f')
+        end = datetime.datetime.strptime(enddate, '%Y-%m-%d %H:%M:%S.%f')
+        tz = pytz.timezone('US/Eastern')
+        start = tz.localize(start).astimezone(pytz.utc).timestamp()
+        end = tz.localize(end).astimezone(pytz.utc).timestamp()
+        
+        #populate each subplot
+        for sensor in sensors_to_plot:
+            
+            #determine sensor_type
+            for sensor_type in sensors:
+                if sensor in sensors[sensor_type]:
+                    sensor_type = sensor_type
+                    break
+            
+            #get data from HDFStore
+            with pd.HDFStore('SlowCtrlAgg.h5', 'r') as hdf:
+                data = hdf.select(self._typetogroup[sensor_type],
+                                  where=f'index > {start} & index < {end}')
+                
+                x = data.index
+                x = pd.to_datetime((x*1e9).astype('int64'), utc=True)
+                x = x.tz_convert(pytz.timezone('US/Eastern'))
+                x = x.date
+                y = data[self._handletolabel[sensor]]
+            
+            #plot data
+            ax = self.axes[sensor_type]
+            artist = ax.scatter(x,y)
+            
+            #track handles to labels
+            if sensor_type in self.legend:
+                self.legend[sensor_type].update({artist:sensor})
+            else: #intialize dict if first line on axes
+                self.legend[sensor_type] = {artist:sensor}
+        
+        for sensor_type in self.axes:
+            ax = self.axes[sensor_type]
+            ax.legend(self.legend[sensor_type].keys(),
+                      self.legend[sensor_type].values(),
+                      loc='upper left',
+                      fancybox=True, shadow=True, prop={'size': 7})
+        
+        self.f.tight_layout(pad=2)
         self.canvas.draw()
 
 class AlphaViewer(tk.Frame):
@@ -1269,6 +1444,9 @@ class AlphaViewer(tk.Frame):
                 else:
                     thislist += self.get_items(child)
         return thislist
+
+
+
 
 app = LXeDataManager()
 #s = ttk.Style()

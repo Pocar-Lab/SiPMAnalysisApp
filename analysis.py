@@ -171,7 +171,7 @@ def process_waveforms(dfname, rundir):
     wfs = fnmatch.filter(os.listdir(rundir), 'w*')
     
     skipped = 0
-
+    
     DF = pd.DataFrame(data=None, columns=['time', 'peak_height', 'baseline',
                                           'noise_rms', 'peak_width',
                                           'peak_time'])
@@ -186,22 +186,21 @@ def process_waveforms(dfname, rundir):
             # print( 'w{} was skipped'.format(wnum)
             skipped += 1
             continue
-
+        
         peak_dat = get_peaks(x, y)
 
         if peak_dat is None:
             # print( 'w{} was skipped'.format(wnum))
             skipped += 1
             continue
-
+        
         # start time of the waveform, peak_time is when the PEAK happened
         peak_dat.update({'time': time})
-
+        
         series = pd.Series(peak_dat, name=str(wnum))
         DF = DF.append(series)
-        
-        
-        
+    
+    
     print( '# of waveforms total: ', num)
     print( '# of skipped waveforms: ', skipped)
 
@@ -262,8 +261,10 @@ def get_wf(wf, path):
     datestr = pathlist[3].strip()
     dtstr = datestr + ' ' + timestr
     dt = datetime.datetime.strptime(dtstr, '%Y%m%d %H:%M:%S.%f')
-    tz = pytz.timezone('EST') #assume text file used EST with DST effects
-    dt = tz.localize(dt) 
+    #BUG: this was previously timezone 'EST' needed to be 'US/Eastern' to account for DST
+    #tz = pytz.timezone('EST') #assume text file used EST with DST effects
+    tz = pytz.timezone('US/Eastern')
+    dt = tz.localize(dt)
     utcdt = dt.astimezone(pytz.utc)
     time = utcdt.timestamp()
     
